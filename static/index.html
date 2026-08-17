@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Label Change Diffs</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --border: #dfe3e8;
+    --text: #1c2024;
+    --muted: #6b7280;
+    --accent: #2f6feb;
+    --add-bg: #dcfce7;
+    --add-text: #14532d;
+    --del-bg: #fee2e2;
+    --del-text: #7f1d1d;
+    --chip: #eef1f5;
+    --warn-bg: #fef3c7;
+    --warn-text: #78350f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a;
+      --panel: #1c1f24;
+      --border: #2c3138;
+      --text: #e6e8eb;
+      --muted: #9aa3ad;
+      --accent: #6ea8ff;
+      --add-bg: #123524;
+      --add-text: #86efac;
+      --del-bg: #3b1414;
+      --del-text: #fca5a5;
+      --chip: #262b31;
+      --warn-bg: #3a2d0b;
+      --warn-text: #fcd34d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 20px;
+  }
+  .bar { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 16px; margin: 0; font-weight: 650; white-space: nowrap; }
+  .modes { display: flex; gap: 4px; background: var(--chip); padding: 3px; border-radius: 8px; }
+  .modes button {
+    border: 0; background: transparent; color: var(--muted); cursor: pointer;
+    padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 550; font-family: inherit;
+  }
+  .modes button[aria-pressed="true"] { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.14); }
+  .search { position: relative; flex: 1 1 320px; min-width: 260px; }
+  .search input {
+    width: 100%; padding: 9px 12px; font-size: 14px; font-family: inherit;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--text);
+  }
+  .search input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .suggestions {
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0; max-height: 340px; overflow-y: auto;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.16); list-style: none; margin: 0; padding: 4px; display: none;
+  }
+  .suggestions.open { display: block; }
+  .suggestions li { padding: 7px 10px; border-radius: 6px; cursor: pointer; display: flex; gap: 10px; align-items: baseline; }
+  .suggestions li[aria-selected="true"] { background: var(--chip); }
+  .suggestions .name { font-weight: 550; }
+  .suggestions .key { color: var(--muted); font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .suggestions .count { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px; }
+  .hint { color: var(--muted); padding: 40px 0; text-align: center; }
+  .drug-title { font-size: 22px; font-weight: 650; margin: 4px 0 2px; }
+  .drug-sub { color: var(--muted); font-size: 13px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin-bottom: 18px; }
+  .lineage { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 18px; overflow: hidden; }
+  .lineage > summary { padding: 12px 16px; cursor: pointer; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .lineage > summary::-webkit-details-marker { display: none; }
+  .lineage > summary::before { content: "▸"; color: var(--muted); }
+  .lineage[open] > summary::before { content: "▾"; }
+  .lineage-name { font-weight: 600; }
+  .meta {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 10px 18px; padding: 12px 16px 16px; border-top: 1px solid var(--border); background: var(--bg);
+  }
+  .meta div { min-width: 0; }
+  .meta dt { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 2px; }
+  .meta dd { margin: 0; font-size: 13px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+  .meta .kv-key { color: var(--muted); }
+  .chip { display: inline-block; padding: 2px 8px; border-radius: 20px; background: var(--chip); color: var(--muted); font-size: 11.5px; font-weight: 550; white-space: nowrap; }
+  .chip.cross { background: var(--warn-bg); color: var(--warn-text); }
+  .chip.add { background: var(--add-bg); color: var(--add-text); }
+  .chip.del { background: var(--del-bg); color: var(--del-text); }
+  .section { border-top: 1px solid var(--border); }
+  .section > summary { padding: 10px 16px; cursor: pointer; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .section > summary::-webkit-details-marker { display: none; }
+  .section-name { font-weight: 600; font-size: 14px; }
+  .tabs { display: flex; gap: 3px; margin-left: auto; background: var(--chip); padding: 2px; border-radius: 7px; }
+  .tabs button {
+    border: 0; background: transparent; color: var(--muted); cursor: pointer;
+    padding: 3px 10px; border-radius: 5px; font-size: 12px; font-weight: 550; font-family: inherit;
+  }
+  .tabs button[aria-pressed="true"] { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.14); }
+  .diff {
+    margin: 0; padding: 14px 16px 18px; border-top: 1px solid var(--border);
+    font: 13.5px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace;
+    white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .version-head {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    padding: 8px 16px; background: var(--bg); border-top: 1px solid var(--border);
+    font-size: 12px; color: var(--muted);
+  }
+  .diff ins { background: var(--add-bg); color: var(--add-text); text-decoration: none; border-radius: 3px; padding: 1px 2px; }
+  .diff del { background: var(--del-bg); color: var(--del-text); text-decoration: line-through; border-radius: 3px; padding: 1px 2px; }
+  .elision { display: block; color: var(--muted); font-style: italic; margin: 10px 0; opacity: .8; }
+  .empty { color: var(--muted); font-style: italic; }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <h1>Label Change Diffs</h1>
+    <div class="modes" id="modes" role="group" aria-label="Data source"></div>
+    <div class="search">
+      <input id="q" type="text" autocomplete="off" spellcheck="false"
+             placeholder="Search a drug name or drug key…"
+             role="combobox" aria-expanded="false" aria-controls="suggestions" aria-autocomplete="list">
+      <ul class="suggestions" id="suggestions" role="listbox"></ul>
+    </div>
+  </div>
+</header>
+<main id="main"><p class="hint">Pick a source, then search for a drug.</p></main>
+
+<script>
+const state = { mode: null, modes: [], items: [], cursor: -1, seq: 0, drug: null, sectionText: {} };
+
+const el = {
+  modes: document.getElementById("modes"),
+  q: document.getElementById("q"),
+  suggestions: document.getElementById("suggestions"),
+  main: document.getElementById("main"),
+};
+
+const escapeHtml = (value) =>
+  String(value ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+const fmt = (value) => (value === null || value === undefined || value === "" ? "—" : value);
+
+async function getJson(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || response.statusText);
+  return response.json();
+}
+
+/* Render the wdiff markers the pipeline writes: [-removed-], {+added+}, and the
+   "\n[... N unchanged words ...]\n" marker that stands in for an elided run. */
+function renderDiff(text) {
+  if (!text) return '<span class="empty">No diff text.</span>';
+  const token = /\[-([\s\S]*?)-\]|\{\+([\s\S]*?)\+\}|\n\[\.\.\. (\d+) unchanged words \.\.\.\]\n/g;
+  let html = "";
+  let at = 0;
+  let match;
+  while ((match = token.exec(text)) !== null) {
+    html += escapeHtml(text.slice(at, match.index));
+    if (match[1] !== undefined) html += `<del>${escapeHtml(match[1])}</del>`;
+    else if (match[2] !== undefined) html += `<ins>${escapeHtml(match[2])}</ins>`;
+    else html += `<span class="elision">… ${Number(match[3]).toLocaleString()} unchanged words …</span>`;
+    at = token.lastIndex;
+  }
+  return html + escapeHtml(text.slice(at));
+}
+
+function kvPair(pair) {
+  if (!pair || (!pair.key && !pair.value)) return "—";
+  return `<span class="kv-key">${escapeHtml(pair.key)}=</span>${escapeHtml(fmt(pair.value))}`;
+}
+
+function renderMeta(lineage) {
+  const meta = lineage.meta || {};
+  const fields = [
+    ["Source", escapeHtml(fmt(meta.source))],
+    ["Baseline source", escapeHtml(fmt(meta.baseline_source))],
+    ["Date", escapeHtml(fmt(lineage.date))],
+    ["Baseline date", escapeHtml(fmt(lineage.baseline_date))],
+    ["Version", kvPair(meta.version)],
+    ["Baseline version", kvPair(meta.baseline_version)],
+    ["Label version id", kvPair(meta.label_version_id)],
+    ["Baseline label version id", kvPair(meta.baseline_label_version_id)],
+    ["set_id", escapeHtml(fmt(lineage.set_id))],
+    ["Application numbers", escapeHtml((lineage.application_numbers || []).join(", ") || "—")],
+    ["run_id", escapeHtml(fmt(lineage.run_id))],
+  ];
+  return `<dl class="meta">${fields
+    .map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`)
+    .join("")}</dl>`;
+}
+
+function renderSection(section, lineageIndex, sectionIndex, hasSectionText) {
+  const chips = [
+    section.similarity !== null ? `<span class="chip">distance ${section.similarity}</span>` : "",
+    section.n_words_added ? `<span class="chip add">+${section.n_words_added}</span>` : "",
+    section.n_words_removed ? `<span class="chip del">−${section.n_words_removed}</span>` : "",
+    section.semantic_diff === null || section.semantic_diff === undefined
+      ? "" : `<span class="chip">semantic ${section.semantic_diff}</span>`,
+  ].join("");
+  const tabs = hasSectionText
+    ? `<span class="tabs" data-lineage="${lineageIndex}" data-section="${sectionIndex}">
+         <button type="button" data-view="diff" aria-pressed="true">Diff</button>
+         <button type="button" data-view="baseline" aria-pressed="false">Before</button>
+         <button type="button" data-view="head" aria-pressed="false">After</button>
+       </span>`
+    : "";
+  return `<details class="section" open data-lineage="${lineageIndex}" data-section="${sectionIndex}">
+    <summary><span class="section-name">${escapeHtml(section.section)}</span>${chips}${tabs}</summary>
+    <div class="body" id="body-${lineageIndex}-${sectionIndex}">
+      <div class="diff">${renderDiff(section.diff_text)}</div>
+    </div>
+  </details>`;
+}
+
+function renderLineage(lineage, index, hasSectionText) {
+  const cross = lineage.meta && lineage.meta.cross_source
+    ? '<span class="chip cross">cross-source</span>' : "";
+  const label = lineage.set_id ? `set_id ${lineage.set_id}` : "no SPL set";
+  return `<details class="lineage" ${index === 0 ? "open" : ""}
+             data-lineage="${index}"
+             data-drug-key="${escapeHtml(state.drug.drug_key)}"
+             data-set-id="${escapeHtml(lineage.set_id || "")}">
+    <summary>
+      <span class="lineage-name">${escapeHtml(lineage.drug_name || "")}</span>
+      <span class="chip">${escapeHtml(label)}</span>
+      <span class="chip">${escapeHtml(fmt(lineage.baseline_date))} → ${escapeHtml(fmt(lineage.date))}</span>
+      ${cross}
+      <span class="chip">${lineage.sections.length} section${lineage.sections.length === 1 ? "" : "s"}</span>
+    </summary>
+    ${renderMeta(lineage)}
+    ${lineage.sections.map((section, sectionIndex) =>
+        renderSection(section, index, sectionIndex, hasSectionText)).join("")}
+  </details>`;
+}
+
+function renderDrug(drug) {
+  state.drug = drug;
+  state.sectionText = {};
+  el.main.innerHTML = `
+    <div class="drug-title">${escapeHtml(drug.drug_names.join(" / ") || drug.drug_key)}</div>
+    <div class="drug-sub">${escapeHtml(drug.drug_key)} · ${drug.lineages.length} lineage${
+      drug.lineages.length === 1 ? "" : "s"}</div>
+    ${drug.lineages.map((lineage, index) =>
+        renderLineage(lineage, index, drug.has_section_text)).join("")}`;
+  window.scrollTo({ top: 0 });
+}
+
+/* Full section text, loaded once per lineage the first time Before or After is asked
+   for, then reused for every section in that lineage. */
+async function sectionTextFor(lineageIndex) {
+  if (state.sectionText[lineageIndex]) return state.sectionText[lineageIndex];
+  const panel = el.main.querySelector(`.lineage[data-lineage="${lineageIndex}"]`);
+  const url = `/api/sections?mode=${encodeURIComponent(state.mode)}`
+    + `&drug_key=${encodeURIComponent(panel.dataset.drugKey)}`
+    + `&set_id=${encodeURIComponent(panel.dataset.setId)}`;
+  state.sectionText[lineageIndex] = await getJson(url);
+  return state.sectionText[lineageIndex];
+}
+
+function renderVersionText(version, sectionName) {
+  if (!version) return '<div class="diff"><span class="empty">Version not found in label_section_versions.</span></div>';
+  const text = (version.sections || {})[sectionName];
+  const ambiguous = version.n_candidates > 1
+    ? `<span class="chip cross">1 of ${version.n_candidates} label PDFs for this submission</span>` : "";
+  return `<div class="version-head">
+      <span class="chip">${escapeHtml(version.source)}</span>
+      <span class="chip">version ${escapeHtml(fmt(version.version_label))}</span>
+      <span class="chip">${escapeHtml(fmt(version.as_of_date))}</span>
+      ${version.drug_category ? `<span class="chip">${escapeHtml(version.drug_category)}</span>` : ""}
+      ${ambiguous}
+    </div>
+    <div class="diff">${text ? escapeHtml(text) : '<span class="empty">Section absent from this version.</span>'}</div>`;
+}
+
+el.main.addEventListener("click", async (event) => {
+  const button = event.target.closest(".tabs button");
+  if (!button) return;
+  event.preventDefault();
+  const tabs = button.parentElement;
+  const lineageIndex = Number(tabs.dataset.lineage);
+  const sectionIndex = Number(tabs.dataset.section);
+  const view = button.dataset.view;
+  for (const other of tabs.querySelectorAll("button")) {
+    other.setAttribute("aria-pressed", String(other === button));
+  }
+  const body = document.getElementById(`body-${lineageIndex}-${sectionIndex}`);
+  const section = state.drug.lineages[lineageIndex].sections[sectionIndex];
+  if (view === "diff") {
+    body.innerHTML = `<div class="diff">${renderDiff(section.diff_text)}</div>`;
+    return;
+  }
+  body.innerHTML = '<div class="diff"><span class="empty">Loading full text…</span></div>';
+  try {
+    const payload = await sectionTextFor(lineageIndex);
+    body.innerHTML = renderVersionText(payload[view], section.section);
+  } catch (error) {
+    body.innerHTML = `<div class="diff"><span class="empty">${escapeHtml(error.message)}</span></div>`;
+  }
+});
+
+function closeSuggestions() {
+  el.suggestions.classList.remove("open");
+  el.q.setAttribute("aria-expanded", "false");
+  state.cursor = -1;
+}
+
+function paintSuggestions() {
+  el.suggestions.innerHTML = state.items
+    .map((item, index) => `<li role="option" data-index="${index}" aria-selected="${index === state.cursor}">
+        <span class="name">${escapeHtml(item.drug_name || "(unnamed)")}</span>
+        <span class="key">${escapeHtml(item.drug_key)}</span>
+        <span class="count">${item.n_diffs} diff${item.n_diffs === 1 ? "" : "s"}</span>
+      </li>`)
+    .join("");
+  el.suggestions.classList.toggle("open", state.items.length > 0);
+  el.q.setAttribute("aria-expanded", String(state.items.length > 0));
+}
+
+async function choose(index) {
+  const item = state.items[index];
+  if (!item) return;
+  el.q.value = item.drug_name || item.drug_key;
+  closeSuggestions();
+  el.main.innerHTML = '<p class="hint">Loading…</p>';
+  try {
+    renderDrug(await getJson(`/api/drug?mode=${encodeURIComponent(state.mode)}&drug_key=${encodeURIComponent(item.drug_key)}`));
+  } catch (error) {
+    el.main.innerHTML = `<p class="hint">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+let debounce;
+el.q.addEventListener("input", () => {
+  clearTimeout(debounce);
+  const query = el.q.value.trim();
+  if (!query) { state.items = []; closeSuggestions(); return; }
+  debounce = setTimeout(async () => {
+    const seq = ++state.seq;
+    try {
+      const data = await getJson(`/api/search?mode=${encodeURIComponent(state.mode)}&q=${encodeURIComponent(query)}`);
+      if (seq !== state.seq) return;           // a newer keystroke already won
+      state.items = data.results;
+      state.cursor = -1;
+      paintSuggestions();
+    } catch { /* typeahead stays quiet on failure */ }
+  }, 120);
+});
+
+el.q.addEventListener("keydown", (event) => {
+  if (!state.items.length) return;
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    const step = event.key === "ArrowDown" ? 1 : -1;
+    state.cursor = (state.cursor + step + state.items.length) % state.items.length;
+    paintSuggestions();
+    el.suggestions.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    choose(state.cursor >= 0 ? state.cursor : 0);
+  } else if (event.key === "Escape") {
+    closeSuggestions();
+  }
+});
+
+el.suggestions.addEventListener("mousedown", (event) => {
+  const item = event.target.closest("li");
+  if (item) { event.preventDefault(); choose(Number(item.dataset.index)); }
+});
+
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".search")) closeSuggestions();
+});
+
+function paintModes() {
+  el.modes.innerHTML = state.modes
+    .map((mode) => `<button type="button" data-mode="${escapeHtml(mode.mode)}"
+        aria-pressed="${mode.mode === state.mode}"
+        title="${mode.n_diffs.toLocaleString()} diffs · ${mode.n_drugs.toLocaleString()} drugs · ${mode.n_lineages.toLocaleString()} lineages"
+      >${escapeHtml(mode.label)}</button>`)
+    .join("");
+}
+
+el.modes.addEventListener("click", (event) => {
+  const button = event.target.closest("button");
+  if (!button || button.dataset.mode === state.mode) return;
+  state.mode = button.dataset.mode;
+  state.items = [];
+  closeSuggestions();
+  paintModes();
+  el.main.innerHTML = '<p class="hint">Search for a drug.</p>';
+  if (el.q.value.trim()) el.q.dispatchEvent(new Event("input"));
+});
+
+(async () => {
+  try {
+    const data = await getJson("/api/modes");
+    state.modes = data.modes;
+    state.mode = data.modes[0]?.mode ?? null;
+    paintModes();
+  } catch (error) {
+    el.main.innerHTML = `<p class="hint">${escapeHtml(error.message)}</p>`;
+  }
+})();
+</script>
+</body>
+</html>

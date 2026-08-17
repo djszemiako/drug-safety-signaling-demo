@@ -1,0 +1,6 @@
+data
+node_modules
+.git
+*.md
+__pycache__
+*.py
